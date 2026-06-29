@@ -587,10 +587,22 @@ def interpret_wt1(page, seed_pt: str = "", seed_anchors=None):
         slots = bucket_by_anchor([(w["x1"], w["text"]) for w in nums],
                                  anchors, tol=22.0)
         row = f"{zone} | {control}"
-        records.append(_rec("Water", "WT1", pt, row,
-                            "Absolute | Prior Year Usage (m3)", slots[0] or "0"))
-        records.append(_rec("Water", "WT1", pt, row,
-                            "Absolute | Reporting Year Usage (m3)", slots[1] or "0"))
+        # Same 7-column layout as EN1/GH1: Absolute 2024/2025/FloorAreaCovered/
+        # MaxFloorArea, then Like-for-Like 2024/2025/FloorAreaCovered. Emit all
+        # so Like-for-Like (and coverage) water mismatches are compared too —
+        # not just Absolute (e.g. a Like-for-Like Exterior water discrepancy).
+        for slot, col in (
+            (0, "Absolute | Prior Year Usage (m3)"),
+            (1, "Absolute | Reporting Year Usage (m3)"),
+            (2, "Absolute | Floor Area Covered (sq. ft.)"),
+            (3, "Absolute | Maximum Floor Area (sq. ft.)"),
+            (4, "Like-for-Like | Prior Year Usage (m3)"),
+            (5, "Like-for-Like | Reporting Year Usage (m3)"),
+            (6, "Like-for-Like | Floor Area Covered (sq. ft.)"),
+        ):
+            records.append(_rec("Water", "WT1", pt, row, col,
+                                slots[slot] if slot < len(slots) and slots[slot]
+                                else "0"))
 
     last_pt = pt_headers[-1][1] if pt_headers else seed_pt
     return records, last_pt, anchors
