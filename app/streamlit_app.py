@@ -9,7 +9,7 @@ import streamlit as st
 from app.presenters import (clipboard_tsv, client_name_from_filename,
                             printable_html, report_title, safe_filename)
 from gresb_diff.__main__ import DEFAULT_MAPPING, run
-from gresb_diff.report import result_to_rows, section_label
+from gresb_diff.report import readable_report, result_to_rows, section_label
 
 # Package-anchored (resolves regardless of working directory, incl. in-browser
 # via stlite) rather than a CWD-relative path.
@@ -56,6 +56,16 @@ if st.button("Run Review", type="primary"):
                f"section{'' if sections == 1 else 's'}; "
                f"{u} field{'' if u == 1 else 's'} could not be located.")
     st.subheader(summary)
+
+    # Readable summary above the table: grouped bullets ("GRESB - x vs Word Dif
+    # - y") that can be pasted straight into a Jira description.
+    readable = readable_report(result)
+    if readable:
+        st.markdown("#### Readable summary")
+        st.markdown(readable)
+        with st.expander("📋 Copy for Jira (Markdown)"):
+            st.code(readable, language="markdown")
+        st.divider()
 
     if rows:
         st.dataframe(rows, use_container_width=True, hide_index=True)

@@ -3,10 +3,39 @@ from gresb_diff.models import Difference
 from gresb_diff.report import (
     category_code,
     order_differences,
+    readable_report,
     result_to_rows,
     render_markdown,
     section_label,
 )
+
+
+def test_readable_report_groups_and_formats():
+    r = CompareResult()
+    pt = "Industrial: Distribution Warehouse | United States"
+    r.differences.append(Difference(
+        "Energy", pt, "EN1.WB_TENANT|FUEL.L4L.fa_covered",
+        "Whole Building | Tenant Controlled | Fuels | Like-for-Like | "
+        "Floor Area Covered (sq. ft.)", "1322742",
+        "Whole Site: Indirect Fuel | Like-for-Like | Data Coverage (ft²)",
+        "344327", "value_mismatch"))
+    r.differences.append(Difference(
+        "Energy", pt, "EN1.WB_TENANT|FUEL.L4L.prior",
+        "Whole Building | Tenant Controlled | Fuels | Like-for-Like | "
+        "2024 Consumption (MWh)", "2572.18",
+        "Whole Site: Indirect Fuel | Like-for-Like | Prior Year Usage (MWh)",
+        "278.32", "value_mismatch"))
+    out = readable_report(r)
+    assert "**EN1 Energy - " + pt + "**" in out
+    assert "- LFL Whole Site: Indirect Fuel" in out
+    assert "Floor Area Covered: GRESB - 1322742 sq ft vs Word Dif - 344327 sq ft" in out
+    assert "2024: GRESB - 2572.18 MWh vs Word Dif - 278.32 MWh" in out
+    # both metrics nest under the one row bullet
+    assert out.count("- LFL Whole Site: Indirect Fuel") == 1
+
+
+def test_readable_report_empty_when_no_differences():
+    assert readable_report(CompareResult()) == ""
 
 
 def test_category_code_from_canonical_id():

@@ -1,9 +1,89 @@
 """Render comparison results to structured rows and Markdown (mismatches only)."""
 from __future__ import annotations
 
-from collections import defaultdict
+import re
+from collections import OrderedDict, defaultdict
 
 from .compare import CompareResult
+
+# Display units, normalised from the raw column parenthetical.
+_UNIT_FIX = {"sq. ft.": "sq ft", "ft²": "sq ft", "m3": "m³", "mt": "MT"}
+
+
+def _split_field(field: str):
+    """Split a field name into (group, row, metric_column).
+
+    Matrix fields look like 'Zone | Control | Fuel | Absolute | 2024
+    Consumption (MWh)'; the last two segments are the Absolute/Like-for-Like
+    group and the metric column. Non-matrix fields ('Shared Services | Floor
+    Area', 'LEED Core & Shell') have no group."""
+    parts = [p.strip() for p in field.split("|")]
+    if len(parts) >= 3 and parts[-2] in ("Absolute", "Like-for-Like"):
+        group = "LFL" if "Like" in parts[-2] else "Abs"
+        return group, " | ".join(parts[:-2]), parts[-1]
+    if len(parts) >= 2:
+        return None, " | ".join(parts[:-1]), parts[-1]
+    return None, field.strip(), ""
+
+
+def _metric_label(col: str) -> str:
+    """Human metric label: the calendar year if present (PDF columns carry it),
+    else Prior/Reporting Year, floor-area, or assets."""
+    low = col.lower()
+    year = re.search(r"(20\d\d)", col)
+    if year:
+        return year.group(1)
+    if "prior" in low:
+        return "Prior Year"
+    if "reporting" in low:
+        return "Reporting Year"
+    if "max" in low:
+        return "Maximum Floor Area"
+    if "floor area" in low or "coverage" in low or "covered" in low:
+        return "Floor Area Covered"
+    if "number of assets" in low:
+        return "Number of Assets"
+    return col
+
+
+def _unit(col: str) -> str:
+    m = re.search(r"\(([^)]+)\)", col)
+    if not m:
+        return ""
+    u = m.group(1).strip()
+    return _UNIT_FIX.get(u.lower(), u)
+
+
+def readable_report(result: CompareResult) -> str:
+    """A copy-paste-friendly Markdown summary of the differences, grouped by
+    '<CODE> <Section> - <Property Type>' → field row → per-metric line
+    ('GRESB - <pdf> vs Word Dif - <docx>'). Mirrors the readable layout used
+    for ticket descriptions. Returns '' when there are no differences."""
+    groups: "OrderedDict" = OrderedDict()
+    for d in result.differences:
+        code = category_code(d.canonical_id)
+        group, row, mcol_docx = _split_field(d.docx_field_name)
+        _gp, _rp, mcol_pdf = _split_field(d.pdf_field_name)
+        mcol = mcol_pdf or mcol_docx
+        metric = _metric_label(mcol)
+        unit = _unit(mcol) or _unit(mcol_docx)
+        row_label = (group + " " if group else "") + row
+        head = f"{code} {d.section} - {d.property_type}".strip()
+        groups.setdefault(head, OrderedDict()).setdefault(row_label, []).append(
+            (metric, d.pdf_value, d.docx_value, unit))
+
+    lines: list[str] = []
+    for head, rows in groups.items():
+        lines.append(f"**{head}**")
+        for row_label, metrics in rows.items():
+            lines.append(f"- {row_label}")
+            for metric, pdf_val, docx_val, unit in metrics:
+                u = f" {unit}" if unit else ""
+                prefix = f"{metric}: " if metric else ""
+                lines.append(
+                    f"    - {prefix}GRESB - {pdf_val}{u} vs Word Dif - {docx_val}{u}")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 # Canonical-id prefixes -> GRESB indicator code, longest/most-specific first.
