@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+# Customer data — never commit
+*.pdf
+*.docx
+tests/baseline/*.json
+.DS_Store
+# Local editor/harness settings (worktrees, jobs, session state)
+.claude/
+# Scratch outputs (regenerated on demand)
+worksheet.csv
+diffs.md
+*.log
+
+# Internal planning artifacts (may reference client specifics) — keep local only
+docs/

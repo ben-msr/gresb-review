@@ -1,0 +1,6 @@
+canonical_id,mode,compare,value_type,section,question,docx_row,docx_col,pdf_row,pdf_col,display_pdf,display_docx
+r1.assets,keyed,true,int,Reporting Characteristics,R1,,Number of Assets,,Number of Assets,R1 Assets,R1 Number of Assets
+r1.floor_area,keyed,true,decimal,Reporting Characteristics,R1,,Floor Area (ft²),,Floor Area (ft²),R1 Floor Area,R1 Floor Area (ft²)
+r1.gav,keyed,true,decimal,Reporting Characteristics,R1,,% of GAV,,% of GAV,R1 % GAV,R1 % of GAV
+ra2.assets,keyed,true,int,Risk Assessment,RA2,,Number of Assets,,Number of Assets,RA2 Number of assets,RA2 Number of Assets
+bc2.assets,keyed,true,int,Building Certifications,BC2,,Number of Assets,,Number of Assets,Number of assets,Number of Assets

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GRESB ↔ Measurabl Diff</title>
+  <!-- stlite: runs the Streamlit app entirely in the browser via WebAssembly.
+       Files are processed client-side; nothing is uploaded to a server. -->
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/@stlite/browser@0.85.1/build/stlite.css"
+  />
+  <style>
+    html, body, #root { height: 100%; margin: 0; }
+    #boot { font-family: Arial, Helvetica, sans-serif; padding: 1.5rem;
+            color: #333; }
+    /* Client-side "running" overlay: shown the instant Run Review is clicked
+       (stlite paints Python UI only at the end of a run, so st.spinner can't
+       show during the computation). */
+    #busy { display: none; position: fixed; inset: 0; z-index: 99999;
+            background: rgba(255, 255, 255, 0.75);
+            align-items: center; justify-content: center; flex-direction: column;
+            font-family: Arial, Helvetica, sans-serif; color: #222; gap: 1rem; }
+    #busy.show { display: flex; }
+    #busy .ring { width: 52px; height: 52px; border: 6px solid #d0d0d0;
+                  border-top-color: #ff4b4b; border-radius: 50%;
+                  animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="boot">Loading the app (first load downloads the
+    Python runtime and can take a minute)…</div></div>
+
+  <div id="busy">
+    <div class="ring"></div>
+    <div>Comparing… large PDFs can take up to a minute in the browser.</div>
+  </div>
+
+  <script>
+    // Show the overlay when "Run Review" is clicked; hide it on the first DOM
+    // update afterward. Under stlite the worker is blocked during the run and
+    // emits nothing until it finishes, so the first mutation is the results.
+    (function () {
+      const busy = document.getElementById("busy");
+      document.addEventListener("click", function (e) {
+        const btn = e.target.closest("button");
+        if (!btn || btn.innerText.trim() !== "Run Review") return;
+        busy.classList.add("show");
+        const root = document.getElementById("root");
+        const obs = new MutationObserver(function () {
+          busy.classList.remove("show");
+          obs.disconnect();
+        });
+        obs.observe(root, { childList: true, subtree: true });
+        // Safety net in case no mutation fires.
+        setTimeout(function () {
+          busy.classList.remove("show");
+          try { obs.disconnect(); } catch (_) {}
+        }, 180000);
+      }, true);
+    })();
+  </script>
+
+  <script type="module">
+    import { mount } from
+      "https://cdn.jsdelivr.net/npm/@stlite/browser@0.85.1/build/stlite.js";
+
+    // Engine + UI files are fetched from this site (relative URLs), so the
+    // page stays in sync with the repo — no Python is inlined here.
+    const f = (p) => ({ url: "./" + p });
+
+    // micropip runs in a Web Worker with no document base, so a relative wheel
+    // URL fails to parse. Resolve it to an absolute URL from the page location
+    // (works on both localhost and the GitHub Pages sub-path).
+    const wheelURL = new URL(
+      "vendor/pdfplumber-0.11.8-py3-none-any.whl",
+      window.location.href
+    ).href;
+
+    mount(
+      {
+        // pdfplumber is vendored as a patched wheel with its `pypdfium2`
+        // dependency removed: pypdfium2 is a native binary with no pure-Python
+        // wheel (so micropip can't install it), and it is only used for image
+        // rendering, which this tool never does. Same pdfplumber 0.11.8 code as
+        // the local/tested build; micropip still pulls pdfminer.six + Pillow.
+        requirements: ["python-docx==1.2.0", wheelURL],
+        entrypoint: "app/streamlit_app.py",
+        files: {
+          "gresb_diff/__init__.py": f("gresb_diff/__init__.py"),
+          "gresb_diff/__main__.py": f("gresb_diff/__main__.py"),
+          "gresb_diff/models.py": f("gresb_diff/models.py"),
+          "gresb_diff/canonical.py": f("gresb_diff/canonical.py"),
+          "gresb_diff/crosswalk.py": f("gresb_diff/crosswalk.py"),
+          "gresb_diff/compare.py": f("gresb_diff/compare.py"),
+          "gresb_diff/docx_parser.py": f("gresb_diff/docx_parser.py"),
+          "gresb_diff/pdf_parser.py": f("gresb_diff/pdf_parser.py"),
+          "gresb_diff/report.py": f("gresb_diff/report.py"),
+          "gresb_diff/mapping/gresb_2026.csv":
+            f("gresb_diff/mapping/gresb_2026.csv"),
+          "app/__init__.py": f("app/__init__.py"),
+          "app/presenters.py": f("app/presenters.py"),
+          "app/streamlit_app.py": f("app/streamlit_app.py"),
+        },
+      },
+      document.getElementById("root")
+    );
+  </script>
+</body>
+</html>
