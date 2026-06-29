@@ -67,6 +67,10 @@ def readable_report(result: CompareResult) -> str:
         mcol = mcol_pdf or mcol_docx
         metric = _metric_label(mcol)
         unit = _unit(mcol) or _unit(mcol_docx)
+        # GHG emissions are reported in MTCO2e; the GRESB PDF column just says
+        # "tonnes". Show the standard emissions unit.
+        if code == "GH1" and unit.lower() == "tonnes":
+            unit = "MTCO2e"
         row_label = (group + " " if group else "") + row
         head = f"{code} {d.section} - {d.property_type}".strip()
         groups.setdefault(head, OrderedDict()).setdefault(row_label, []).append(

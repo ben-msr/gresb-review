@@ -38,6 +38,19 @@ def test_readable_report_empty_when_no_differences():
     assert readable_report(CompareResult()) == ""
 
 
+def test_readable_report_ghg_unit_is_mtco2e():
+    r = CompareResult()
+    r.differences.append(Difference(
+        "GHG", "Hotel | United States", "GH1.WB|SCOPE_3.L4L.prior",
+        "Whole Building | Scope 3 | Like-for-Like | 2024 Consumption (tonnes)",
+        "5024.47",
+        "Scope 3 | Like-for-Like | Prior Year Emissions (MTCO2e)", "4069.12",
+        "value_mismatch"))
+    out = readable_report(r)
+    assert "2024: GRESB - 5024.47 MTCO2e vs Word Dif - 4069.12 MTCO2e" in out
+    assert "tonnes" not in out
+
+
 def test_category_code_from_canonical_id():
     cases = {
         "EN1.SHARED|ELECTRIC.ABS.prior": "EN1",
