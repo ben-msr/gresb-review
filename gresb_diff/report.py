@@ -85,7 +85,8 @@ def readable_report(result: CompareResult) -> str:
                 u = f" {unit}" if unit else ""
                 prefix = f"{metric}: " if metric else ""
                 lines.append(
-                    f"    - {prefix}GRESB - {pdf_val}{u} vs Word Dif - {docx_val}{u}")
+                    f"    - {prefix}GRESB - ({pdf_val}{u}) "
+                    f"vs Word Dif - ({docx_val}{u})")
         lines.append("")
     return "\n".join(lines).strip()
 
