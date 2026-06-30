@@ -85,7 +85,7 @@
         // wheel (so micropip can't install it), and it is only used for image
         // rendering, which this tool never does. Same pdfplumber 0.11.8 code as
         // the local/tested build; micropip still pulls pdfminer.six + Pillow.
-        requirements: ["python-docx==1.2.0", wheelURL],
+        requirements: ["python-docx==1.2.0", "openpyxl==3.1.5", wheelURL],
         entrypoint: "app/streamlit_app.py",
         files: {
           "gresb_diff/__init__.py": f("gresb_diff/__init__.py"),

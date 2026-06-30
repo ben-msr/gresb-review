@@ -9,6 +9,7 @@ import streamlit as st
 from app.presenters import (clipboard_tsv, client_name_from_filename,
                             printable_html, report_title, safe_filename)
 from gresb_diff.__main__ import DEFAULT_MAPPING, run
+from gresb_diff.reconcile import AssetData, reconcile, reconcile_report
 from gresb_diff.report import readable_report, result_to_rows, section_label
 
 # Package-anchored (resolves regardless of working directory, incl. in-browser
@@ -25,6 +26,9 @@ with col1:
     pdf_file = st.file_uploader("GRESB Fund PDF", type=["pdf"])
 with col2:
     docx_file = st.file_uploader("Measurabl Word-for-Diff (.docx)", type=["docx"])
+xlsx_file = st.file_uploader(
+    "GRESB Asset-Level Data (.xlsx) — optional, enables per-asset reconciliation",
+    type=["xlsx"])
 
 if st.button("Run Review", type="primary"):
     # Always clickable; guard inside so a click always produces visible feedback
@@ -57,14 +61,35 @@ if st.button("Run Review", type="primary"):
                f"{u} field{'' if u == 1 else 's'} could not be located.")
     st.subheader(summary)
 
-    # Readable summary above the table: grouped bullets ("GRESB - x vs Word Dif
-    # - y") that can be pasted straight into a Jira description.
+    # Summary above the table: grouped bullets ("GRESB - x vs Word Dif - y")
+    # that can be pasted straight into a Jira description.
     readable = readable_report(result)
     if readable:
-        st.markdown("#### Readable summary")
+        st.markdown("#### Summary")
         st.markdown(readable)
         with st.expander("📋 Copy for Jira (Markdown)"):
             st.code(readable, language="markdown")
+
+    # Reconciliation: if the asset-level Excel was provided, explain each flagged
+    # like-for-like line by the asset(s)/cause behind it.
+    if xlsx_file is not None and result.differences:
+        try:
+            recon_md = reconcile_report(reconcile(
+                AssetData(xlsx_file.getvalue()), result))
+        except Exception as exc:
+            import traceback
+            st.warning(f"Reconciliation skipped: {type(exc).__name__}: {exc}")
+            st.code(traceback.format_exc())
+            recon_md = ""
+        if recon_md:
+            st.markdown("#### Reconciliation — which asset(s) explain each mismatch")
+            st.caption("EN1/GH1/WT1 like-for-like lines only; ownership-weighted. "
+                       "Negatives, GRESB-side adjustments, and Word-doc add/drop "
+                       "are classified separately.")
+            st.markdown(recon_md)
+            with st.expander("📋 Copy reconciliation for Jira (Markdown)"):
+                st.code(recon_md, language="markdown")
+    if readable:
         st.divider()
 
     if rows:
