@@ -17,3 +17,6 @@ diffs.md
 docs/
 *.xlsx
 *.csv
+
+# Test suite kept local only (not published to GitHub)
+tests/
