@@ -4,6 +4,7 @@ Files are processed in memory only — nothing is written to disk or logged.
 """
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import streamlit as st
@@ -21,11 +22,17 @@ MAPPING = DEFAULT_MAPPING
 # this file so it resolves both locally and in the stlite browser filesystem.
 PDF_FORMAT_IMG = str(Path(__file__).resolve().parent / "assets"
                      / "pdf-download-format.png")
+# st.image renamed use_column_width -> use_container_width; the in-browser stlite
+# build is newer than the pinned local Streamlit, so pick whichever kwarg the
+# running version supports (avoids both a TypeError and a deprecation warning).
+_IMG_WIDTH_KW = ("use_container_width"
+                 if "use_container_width" in inspect.signature(st.image).parameters
+                 else "use_column_width")
 
 
 @st.dialog("How to export the GRESB PDF", width="large")
 def _show_pdf_format_help():
-    st.image(PDF_FORMAT_IMG, use_column_width=True)
+    st.image(PDF_FORMAT_IMG, **{_IMG_WIDTH_KW: True})
     st.caption("In GRESB's 'Print Response' screen, select A4 and the sections "
                "shown above, then click Generate PDF.")
 
@@ -34,16 +41,18 @@ st.title("GRESB ↔ Measurabl Asset-Level Diff")
 st.caption("Compares the GRESB Fund PDF against the Measurabl Word-for-Diff "
            "export. Files are processed in your session only.")
 
-col1, col2 = st.columns(2)
+# Bottom-aligned so the two upload boxes line up even though the PDF column has
+# an extra title+help row above its (label-collapsed) uploader.
+col1, col2 = st.columns(2, vertical_alignment="bottom")
 with col1:
-    title_l, title_r = st.columns([0.4, 0.6])
+    title_l, title_r = st.columns([0.45, 0.55], vertical_alignment="center")
     with title_l:
         st.markdown("**GRESB Fund PDF**")
     with title_r:
-        if st.button("ⓘ How to export the PDF",
-                     help="Show the GRESB 'Print Response' settings to use"):
+        if st.button("ⓘ how to export", help="Show the GRESB 'Print "
+                     "Response' export settings to use"):
             _show_pdf_format_help()
-    # Label is rendered above (with the help link); collapse the uploader's own.
+    # Title is rendered above (with the help link); collapse the uploader's own.
     pdf_file = st.file_uploader("GRESB Fund PDF", type=["pdf"],
                                 label_visibility="collapsed")
 with col2:
