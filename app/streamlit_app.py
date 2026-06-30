@@ -4,6 +4,8 @@ Files are processed in memory only — nothing is written to disk or logged.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from app.presenters import (clipboard_tsv, client_name_from_filename,
@@ -15,6 +17,17 @@ from gresb_diff.report import readable_report, result_to_rows, section_label
 # Package-anchored (resolves regardless of working directory, incl. in-browser
 # via stlite) rather than a CWD-relative path.
 MAPPING = DEFAULT_MAPPING
+# Screenshot of GRESB's "Print Response" export settings to use. Anchored to
+# this file so it resolves both locally and in the stlite browser filesystem.
+PDF_FORMAT_IMG = str(Path(__file__).resolve().parent / "assets"
+                     / "pdf-download-format.png")
+
+
+@st.dialog("How to export the GRESB PDF", width="large")
+def _show_pdf_format_help():
+    st.image(PDF_FORMAT_IMG, use_column_width=True)
+    st.caption("In GRESB's 'Print Response' screen, select A4 and the sections "
+               "shown above, then click Generate PDF.")
 
 st.set_page_config(page_title="GRESB Diff", layout="wide")
 st.title("GRESB ↔ Measurabl Asset-Level Diff")
@@ -23,7 +36,16 @@ st.caption("Compares the GRESB Fund PDF against the Measurabl Word-for-Diff "
 
 col1, col2 = st.columns(2)
 with col1:
-    pdf_file = st.file_uploader("GRESB Fund PDF", type=["pdf"])
+    title_l, title_r = st.columns([0.4, 0.6])
+    with title_l:
+        st.markdown("**GRESB Fund PDF**")
+    with title_r:
+        if st.button("ⓘ How to export the PDF",
+                     help="Show the GRESB 'Print Response' settings to use"):
+            _show_pdf_format_help()
+    # Label is rendered above (with the help link); collapse the uploader's own.
+    pdf_file = st.file_uploader("GRESB Fund PDF", type=["pdf"],
+                                label_visibility="collapsed")
 with col2:
     docx_file = st.file_uploader("Measurabl Word-for-Diff (.docx)", type=["docx"])
 xlsx_file = st.file_uploader(
