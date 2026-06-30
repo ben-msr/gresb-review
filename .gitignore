@@ -15,3 +15,5 @@ diffs.md
 
 # Internal planning artifacts (may reference client specifics) — keep local only
 docs/
+*.xlsx
+*.csv
