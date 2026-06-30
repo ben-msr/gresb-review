@@ -221,7 +221,50 @@ _BC_HEADER_TOKENS = ("energy rating", "area covered", "number of", "% of",
 _BC_POINT_BAND = re.compile(r"\s*-\s*[\d\-]+\s*points?$", re.I)
 
 
-def interpret_bc_geom(question: str, page, seed_pt: str = ""):
+_BC_TOKENS = ("BC1.1", "BC1.2", "BC2")
+
+
+def bc_question_segments(page, default_q):
+    """Split a BC page into (question, top_lo, top_hi) vertical bands.
+
+    A page can hold more than one BC question (e.g. BC1.2 stacked above BC2).
+    Each band runs from one question heading down to the next, so the caller can
+    parse each table under its own question with its own column anchor. Rows
+    above the first heading belong to ``default_q`` — the question carried in
+    from a previous page (a BC table can continue across a page break with no
+    repeated heading). Adjacent same-question bands are merged.
+
+    Returns a single full-page band ``[(default_q, -inf, inf)]`` when the page
+    has no heading (a continuation page), preserving the prior behaviour."""
+    groups: dict = {}
+    for w in page.extract_words():
+        groups.setdefault(round(w["top"]), []).append(w)
+    headings = []  # (top, question)
+    for top in sorted(groups):
+        ws = sorted(groups[top], key=lambda w: w["x0"])
+        tok = ws[0]["text"].strip() if ws else ""
+        if tok in _BC_TOKENS:
+            headings.append((float(top), tok))
+    if not headings:
+        return [(default_q, float("-inf"), float("inf"))]
+
+    bands = []
+    prev_top, prev_q = float("-inf"), default_q
+    for htop, hq in headings:
+        bands.append((prev_q, prev_top, htop))
+        prev_top, prev_q = htop, hq
+    bands.append((prev_q, prev_top, float("inf")))
+
+    merged = []
+    for q, lo, hi in bands:
+        if merged and merged[-1][0] == q:
+            merged[-1] = (q, merged[-1][1], hi)
+        else:
+            merged.append((q, lo, hi))
+    return merged
+
+
+def interpret_bc_geom(question: str, page, seed_pt: str = "", top_range=None):
     """Geometry-based BC extraction: read 'Number of Assets' by COLUMN POSITION.
 
     The text-order heuristic (assets = 3rd number on the line) misreads when a
@@ -235,9 +278,17 @@ def interpret_bc_geom(question: str, page, seed_pt: str = ""):
     repeated property-type header and would otherwise be dropped (e.g. Mid-Rise
     Office's LEED Interior Design and Construction rows on the following page).
 
+    A page may carry more than one BC question (e.g. BC1.2 above BC2). The
+    caller restricts each question to its own vertical band via ``top_range``
+    (lo, hi) so each table gets its own assets-column anchor — without it a
+    single page-level anchor from one table misreads the other's columns.
+
     Returns (records, last_property_type); records is None if the assets-column
     header is not found (caller falls back to the text-based parser)."""
     words = page.extract_words()
+    if top_range is not None:
+        lo, hi = top_range
+        words = [w for w in words if lo <= w["top"] < hi]
     # Tolerant line grouping: header words ("Number of assets") and data values
     # can render ~1px apart, so exact round(top) would split them and the
     # header (and rows) would be missed on some pages.
@@ -260,6 +311,18 @@ def interpret_bc_geom(question: str, page, seed_pt: str = ""):
                     assets_x1 = w["x1"]
             break
     if assets_x1 is None:
+        # Wrapped column header: "Number of" on one line and "assets" directly
+        # below it (same column), so the two never join into one line. Anchor on
+        # the 'assets' word that has a 'Number' word just above it at the same x.
+        numbers = [w for w in words if w["text"].strip().lower() == "number"]
+        for w in words:
+            if w["text"].strip().lower() != "assets":
+                continue
+            if any(0 < (w["top"] - n["top"]) <= 25 and abs(n["x0"] - w["x0"]) <= 30
+                   for n in numbers):
+                assets_x1 = w["x1"]
+                break
+    if assets_x1 is None:
         return None, seed_pt
 
     # Accumulate assets per (property type, scheme). Point-band rows of the same
@@ -269,7 +332,9 @@ def interpret_bc_geom(question: str, page, seed_pt: str = ""):
     totals: dict = {}
     order: list = []
     current_pt = seed_pt
-    for lws in line_lists:
+    for g in groups:
+        lws = sorted(g["ws"], key=lambda w: w["x0"])
+        top = g["top"]
         text = " ".join(w["text"] for w in lws).strip()
         low = text.lower()
         if " | " in text and not any(k in low for k in _BC_HEADER_TOKENS):
@@ -284,6 +349,16 @@ def interpret_bc_geom(question: str, page, seed_pt: str = ""):
             continue
         scheme = " ".join(w["text"] for w in lws
                           if not _is_number(w["text"])).strip()
+        if not scheme:
+            # Scheme name wraps around its own data row (label text on the line
+            # above and below, only numbers on the middle line). Gather the
+            # label fragments from the left columns within a tight window.
+            left_bound = min((w["x0"] for w in nums), default=0.0) - 5.0
+            frag = sorted((w for w in words
+                           if not _is_number(w["text"]) and w["x0"] < left_bound
+                           and abs(w["top"] - top) <= 12),
+                          key=lambda w: (w["top"], w["x0"]))
+            scheme = " ".join(w["text"] for w in frag).strip()
         if not scheme:
             continue
         scheme = _BC_POINT_BAND.sub("", scheme).strip()
@@ -308,6 +383,31 @@ def interpret_bc_geom(question: str, page, seed_pt: str = ""):
         out.append(_rec("Building Certifications", question, pt,
                         scheme, "Number of Assets", raw))
     return out, current_pt
+
+
+def parse_bc_page(page, default_q, matrix_state):
+    """Parse every BC question on one page, splitting it into per-question
+    vertical bands (see ``bc_question_segments``) so each table is read under
+    its own question and column anchor. ``matrix_state`` is the per-question
+    carry-over dict (mutated to record the last property type).
+
+    The legacy text-table fallback (for pages where geometry finds no assets
+    header) runs ONLY for a single full-page band: on a multi-band page it would
+    parse the WHOLE page and mis-file every row under the header-less band, so a
+    header-less band on such a page correctly yields nothing."""
+    out: list[FieldRecord] = []
+    segments = bc_question_segments(page, default_q)
+    for q, lo, hi in segments:
+        state = matrix_state.get(q, {})
+        geom, last_pt = interpret_bc_geom(
+            q, page, seed_pt=state.get("pt", ""), top_range=(lo, hi))
+        if geom is not None:
+            out.extend(geom)
+            matrix_state[q] = {"pt": last_pt or state.get("pt", "")}
+        elif len(segments) == 1:  # whole page, no anchor: legacy text fallback
+            for tbl in page.extract_tables():
+                out.extend(interpret_bc_table(q, tbl))
+    return out
 
 
 # The 7 numeric columns of the EN1/WT1/GH1 consumption matrices, in order.
@@ -433,6 +533,12 @@ def interpret_ws1(page, seed_pt: str = ""):
                      if _is_number(w["text"])]
     tonne_anchors = _detect_anchors(numeric_words)  # 7-col tonnes table if present
 
+    # Control markers ("Landlord"/"Tenant") in the left label band — used to
+    # recover a control label that WRAPS around its tonnes data row ("Landlord"
+    # above, "Controlled" below), so the data row's own line carries no label.
+    ctrl_markers = [(w["top"], w["text"].lower()) for w in all_words
+                    if w["x0"] < 300 and w["text"].lower() in ("landlord", "tenant")]
+
     # Group words into lines with a small vertical tolerance: in the disposal-
     # route table the row label and its values render ~1px apart (e.g. "Landfill"
     # at top=128, its values at 129), so exact-top grouping would split them.
@@ -463,11 +569,22 @@ def interpret_ws1(page, seed_pt: str = ""):
             continue
 
         # --- Section 1: tonnes by control ---
-        if label.startswith("landlord controlled") or \
-                label.startswith("tenant controlled"):
+        control = None
+        if label.startswith("landlord controlled"):
+            control = "Managed"
+        elif label.startswith("tenant controlled"):
+            control = "Indirect"
+        elif tonne_anchors:
+            # Wrapped control label straddling the data row: anchor on the
+            # nearest control marker within a tight window (see interpret_wt1).
+            near = [(abs(mt - grp["top"]), t) for mt, t in ctrl_markers
+                    if abs(mt - grp["top"]) <= 12]
+            if near:
+                _, t = min(near)
+                control = "Managed" if t == "landlord" else "Indirect"
+        if control:
             if not tonne_anchors:
                 continue
-            control = "Managed" if "landlord" in label else "Indirect"
             slots = bucket_by_anchor([(w["x1"], w["text"]) for w in nums],
                                      tonne_anchors, tol=20.0)
             # anchors: haz2024, nonhaz2024, cov2024, haz2025, nonhaz2025, cov, wt
@@ -541,6 +658,14 @@ def interpret_wt1(page, seed_pt: str = "", seed_anchors=None):
         else:
             groups.append({"top": w["top"], "ws": [w]})
 
+    # Control markers ("Landlord"/"Tenant") in the control label band. Used to
+    # recover a control label that WRAPS around its data row ("Landlord" on the
+    # line above, "Controlled" on the line below), leaving the data row's own
+    # line with no label text.
+    ctrl_markers = [(w["top"], w["text"].lower()) for w in all_words
+                    if 165 <= w["x0"] < 265
+                    and w["text"].lower() in ("landlord", "tenant")]
+
     pt_headers = [(-1.0, seed_pt)] if seed_pt else []
     zone_labels = []   # (y, zone)
     ctrl_rows = []     # (y, control, nums)
@@ -567,6 +692,17 @@ def interpret_wt1(page, seed_pt: str = "", seed_anchors=None):
                    else "Tenant Controlled" if ctrl_text.startswith("tenant controlled")
                    else None)
         nums = [w for w in ws if _is_number(w["text"])]
+        if control is None and nums and anchors:
+            # Wrapped control label: anchor on the nearest control marker within
+            # a tight vertical window (rows are ~40px apart, so ±12 cannot reach
+            # a neighbouring row, and a Sub-total/Total row — with no marker
+            # within the window — stays unlabelled and is skipped).
+            near = [(abs(mt - top), t) for mt, t in ctrl_markers
+                    if abs(mt - top) <= 12]
+            if near:
+                _, t = min(near)
+                control = ("Landlord Controlled" if t == "landlord"
+                           else "Tenant Controlled")
         if control and nums and anchors:
             ctrl_rows.append((top, control, nums))
 
@@ -1062,15 +1198,9 @@ def parse_pdf(src) -> list[FieldRecord]:
                 records.extend(interpret_ra2(lines))
 
             elif question in ("BC1.1", "BC1.2", "BC2"):
-                state = _matrix_state.get(question, {})
-                geom, last_pt = interpret_bc_geom(
-                    question, page, seed_pt=state.get("pt", ""))
-                if geom is not None:
-                    records.extend(geom)
-                    _matrix_state[question] = {"pt": last_pt or state.get("pt", "")}
-                else:  # no assets-column header on this page: text fallback
-                    for tbl in page.extract_tables():
-                        records.extend(interpret_bc_table(question, tbl))
+                # A page may stack two BC questions (e.g. BC1.2 above BC2); parse
+                # each vertical band under its own question and column anchor.
+                records.extend(parse_bc_page(page, question, _matrix_state))
 
             elif question == "WS1":
                 state = _matrix_state.get("WS1", {})
