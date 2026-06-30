@@ -41,16 +41,40 @@ st.title("GRESB ↔ Measurabl Asset-Level Diff")
 st.caption("Compares the GRESB Fund PDF against the Measurabl Word-for-Diff "
            "export. Files are processed in your session only.")
 
+# Render the help trigger as compact, label-sized link text rather than a full
+# button. Scoped to this one button via its key class (st-key-<key>, stable
+# since Streamlit 1.39) so other buttons are untouched.
+st.markdown(
+    """
+    <style>
+    .st-key-pdf_help_btn button {
+        min-height: 0; height: auto; padding: 0 0 0 .4rem;
+        border: none; background: transparent;
+        font-size: .875rem; line-height: 1.4; color: #2563eb;
+    }
+    .st-key-pdf_help_btn button:hover,
+    .st-key-pdf_help_btn button:focus,
+    .st-key-pdf_help_btn button:active {
+        background: transparent; color: #1d4ed8;
+        text-decoration: underline; box-shadow: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Bottom-aligned so the two upload boxes line up even though the PDF column has
 # an extra title+help row above its (label-collapsed) uploader.
 col1, col2 = st.columns(2, vertical_alignment="bottom")
 with col1:
-    title_l, title_r = st.columns([0.45, 0.55], vertical_alignment="center")
+    title_l, title_r = st.columns([0.4, 0.6], gap="small",
+                                   vertical_alignment="center")
     with title_l:
         st.markdown("**GRESB Fund PDF**")
     with title_r:
-        if st.button("ⓘ how to export", help="Show the GRESB 'Print "
-                     "Response' export settings to use"):
+        if st.button("ⓘ GRESB PDF Export Format", key="pdf_help_btn",
+                     help="Show the GRESB 'Print Response' export settings "
+                     "to use"):
             _show_pdf_format_help()
     # Title is rendered above (with the help link); collapse the uploader's own.
     pdf_file = st.file_uploader("GRESB Fund PDF", type=["pdf"],
