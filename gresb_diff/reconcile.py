@@ -202,39 +202,46 @@ _CATEGORY_LABEL = {
     "gresb_adjustment": "GRESB-side adjustment — Word matches the asset data",
     "no_data": "No matching asset-level data",
 }
-# Priority when a row's metrics resolve to different categories (most specific
-# / actionable first).
-_CATEGORY_RANK = ["word_dropped", "word_added", "negatives", "word_extra",
-                  "gresb_adjustment", "no_data"]
+# Metric token -> display label and ordering.
+_METRIC_LABEL = {"prior": "2024", "reporting": "2025",
+                 "fa_covered": "Floor Area Covered"}
+_METRIC_ORDER = {"prior": 0, "reporting": 1, "fa_covered": 2}
 
 
 def reconcile_report(recons) -> str:
     """Markdown for the reconciliation section: grouped by '<CODE> <Section> -
-    <Property Type>', one line per flagged row giving the cause and driver
-    asset(s). Empty string if there is nothing to show."""
+    <Property Type>', a bullet per flagged row, and a sub-bullet per cause —
+    so a row with mixed causes (e.g. negative consumption + a Floor-Area-Covered
+    addition) shows each separately. Metrics that share a cause+driver are
+    combined (e.g. '2024, 2025'). Empty string if there is nothing to show."""
     from collections import OrderedDict
     groups: "OrderedDict" = OrderedDict()
     for r in recons:
         head = f"{r['question']} {r['section']} - {r['property_type']}"
-        row = groups.setdefault(head, OrderedDict()).setdefault(
-            r["row_label"], {"cats": set(), "assets": [], "ambiguous": False})
-        row["cats"].add(r["category"])
-        row["ambiguous"] = row["ambiguous"] or r.get("ambiguous", False)
-        for a in r.get("assets", []):
-            if a not in row["assets"]:
-                row["assets"].append(a)
+        rows = groups.setdefault(head, OrderedDict())
+        rows.setdefault(r["row_label"], []).append(
+            (r["metric"], r["category"], tuple(r.get("assets", [])),
+             r.get("ambiguous", False)))
 
     lines = []
     for head, rows in groups.items():
         lines.append(f"**{head}**")
-        for row_label, info in rows.items():
-            cat = next((c for c in _CATEGORY_RANK if c in info["cats"]), "no_data")
-            label = _CATEGORY_LABEL.get(cat, cat)
-            line = f"- {row_label} — {label}"
-            if info["assets"]:
-                line += ": " + ", ".join(info["assets"])
-                if info["ambiguous"]:
-                    line += " _(one of several possible sets)_"
-            lines.append(line)
+        for row_label, metrics in rows.items():
+            lines.append(f"- {row_label}")
+            # Combine metrics that resolve to the same cause + driver assets.
+            combined: "OrderedDict" = OrderedDict()
+            for metric, cat, assets, amb in metrics:
+                combined.setdefault((cat, assets, amb), []).append(metric)
+            for (cat, assets, amb), mets in combined.items():
+                # Absolute and Like-for-Like share a year token (e.g. both map
+                # to "prior"); dedup so a year isn't listed twice.
+                uniq = sorted(set(mets), key=lambda x: _METRIC_ORDER.get(x, 9))
+                mlabels = ", ".join(_METRIC_LABEL.get(m, m) for m in uniq)
+                line = f"    - {mlabels} — {_CATEGORY_LABEL.get(cat, cat)}"
+                if assets:
+                    line += ": " + ", ".join(assets)
+                    if amb:
+                        line += " _(one of several possible sets)_"
+                lines.append(line)
         lines.append("")
     return "\n".join(lines).strip()

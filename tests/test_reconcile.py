@@ -65,5 +65,21 @@ def test_reconcile_report_groups_and_labels():
                           _diff("EN1.COMMON|FUEL.L4L.prior", "1284.57", "343.33"))]
     md = reconcile_report(recs)
     assert "EN1 Energy - Residential" in md
-    assert "Common Areas Fuel" in md
-    assert "Word doc dropped from like-for-like: Brigham" in md
+    assert "Common Areas Fuel" in md           # row bullet
+    assert "2024 — Word doc dropped from like-for-like: Brigham" in md  # per-metric
+
+
+def test_reconcile_report_splits_mixed_causes_per_metric():
+    base = {"question": "EN1", "section": "Energy",
+            "property_type": "Office: Corporate: High-Rise Office | United States",
+            "row_label": "Tenant Space (Landlord) Electric"}
+    recs = [
+        {**base, "metric": "prior", "category": "negatives", "assets": ["One Lakeside"]},
+        {**base, "metric": "reporting", "category": "negatives", "assets": ["One Lakeside"]},
+        {**base, "metric": "fa_covered", "category": "word_added", "assets": ["One Lakeside"]},
+    ]
+    md = reconcile_report(recs)
+    # 2024 + 2025 share a cause and are combined on one sub-line:
+    assert "2024, 2025 — Negative asset value" in md
+    # Floor Area Covered is its own sub-line with its own cause:
+    assert "Floor Area Covered — Word doc included" in md
